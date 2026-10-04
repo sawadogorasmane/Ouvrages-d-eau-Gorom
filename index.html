@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Carte interactive des points d'eau, châteaux d'eau et bornes-fontaines de la commune de Gorom.">
+<meta name="theme-color" content="#10323f">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Ouvrages d'eau – Commune de Gorom</title>
+<link rel="stylesheet" href="css/leaflet.css">
+<link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+<link rel="stylesheet" href="css/L.Control.Locate.min.css">
+<link rel="stylesheet" href="css/qgis2web.css">
+<link rel="stylesheet" href="css/fontawesome-all.min.css">
+<link rel="stylesheet" href="css/leaflet-measure.css">
+<style>
+:root{--ink:#16262e;--muted:#5d6e77;--brand:#10323f;--accent:#d9a441;--line:#e4eaed}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink)}
+header{flex:none;position:relative;z-index:1200;display:flex;align-items:center;gap:16px;padding:10px 16px;background:var(--brand);color:#fff}
+.brand h1{margin:0;font-size:1.1rem;font-weight:650}
+.brand p{margin:0;font-size:.8rem;opacity:.72}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}
+.chip{display:flex;align-items:center;gap:7px;padding:4px 11px;border-radius:999px;background:rgba(255,255,255,.1);font-size:.82rem;white-space:nowrap}
+.chip b{font-variant-numeric:tabular-nums}
+.dot{width:10px;height:10px;border-radius:50%;border:1.5px solid #fff}
+.search{position:relative;width:270px}
+.search i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+.search input{width:100%;padding:8px 12px 8px 34px;border:2px solid transparent;border-radius:8px;font:inherit;color:var(--ink);background:#fff}
+.search input:focus{outline:0;border-color:var(--accent)}
+#results{display:none;position:absolute;top:100%;left:0;right:0;z-index:1300;margin:6px 0 0;padding:4px;list-style:none;max-height:50vh;overflow:auto;background:#fff;color:var(--ink);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+#results li{display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:6px;cursor:pointer}
+#results li[aria-selected=true],#results li:hover{background:#f6ecd6}
+#results small,#results .none{color:var(--muted)}
+#map{flex:1;min-height:0;background:#eef1f2}
+.leaflet-tooltip.lbl{background:none;border:0;box-shadow:none;padding:0;font-weight:600;color:#1b2a32;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff}
+.leaflet-tooltip.lbl::before{display:none}
+.lbl-village{font-size:11px}
+.lbl-commune{font-size:13px;font-weight:700;color:#2b5c74}
+.leaflet-popup-content-wrapper{padding:0;overflow:hidden;border-radius:10px}
+.leaflet-popup-content{margin:0;min-width:230px}
+.pp-head{padding:10px 14px;background:var(--c);color:var(--t)}
+.pp-kicker{font-size:.75rem;opacity:.85}
+.pp-head h3{margin:1px 0 0;font-size:1.05rem}
+.pp table{width:100%;margin:0;border-collapse:collapse}
+.pp th,.pp td{padding:5px 14px;text-align:left;vertical-align:top;border-top:1px solid var(--line);font-size:.86rem}
+.pp th{width:46%;font-weight:500;color:var(--muted)}
+.pp-empty{margin:0;padding:10px 14px;color:var(--muted)}
+.pp-route{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:9px 14px;border-top:1px solid var(--line);background:#f6f9fa}
+.pp-route a.go{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:7px;background:var(--brand);color:#fff;font-weight:600;font-size:.86rem;text-decoration:none}
+.pp-route a.go:hover{filter:brightness(1.12)}
+.pp-route a.alt{color:var(--brand);font-size:.8rem}
+.leaflet-control-layers{border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.22)}
+/* ---------- Filtre des points d'eau ---------- */
+.pem-filter{background:#fff;padding:10px 12px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.22);width:230px;color:var(--ink)}
+.pem-filter-title{display:flex;align-items:center;gap:7px;width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;font-weight:700;font-size:.9rem;text-align:left;cursor:pointer}
+.pem-filter-title i:first-child{color:var(--brand)}
+.pem-filter-title .pem-chev{margin-left:auto;color:var(--muted);font-size:.75rem;transition:transform .2s}
+.pem-filter-title[aria-expanded=false] .pem-chev{transform:rotate(180deg)}
+.pem-body{margin-top:8px}
+.pem-body[hidden]{display:none}
+.pem-sub{display:block;margin:8px 0 4px;font-size:.74rem;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+.pem-sub:first-child{margin-top:0}
+.pem-filter select{width:100%;padding:7px 9px;border:1px solid #ccd6db;border-radius:7px;background:#fff;color:var(--ink);font:inherit;cursor:pointer}
+.pem-filter select:focus,.pem-filter-title:focus-visible,.pem-actions button:focus-visible{outline:0;border-color:var(--accent);box-shadow:0 0 0 2px rgba(217,164,65,.35)}
+.pem-opt{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;cursor:pointer}
+.pem-opt:hover{background:#f3f6f7}
+.pem-opt input{margin:0;accent-color:var(--brand)}
+.pem-dot{flex:none;width:12px;height:12px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.pem-lbl{flex:1}
+.pem-n{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:600}
+.pem-actions{margin-top:8px}
+.pem-actions button{padding:5px 10px;border:1px solid #ccd6db;border-radius:7px;background:#fff;color:var(--brand);font:inherit;font-size:.82rem;cursor:pointer}
+.pem-actions button:hover{background:#f3f6f7}
+.pem-filter-count{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);color:var(--muted);font-size:.8rem}
+.pem-filter-count b{color:var(--brand)}
+.pem-filter-count .pem-rate{display:block;margin-top:3px}
+.pem-filter-count .pem-warn{display:block;margin-top:3px;color:#a4522f}
+footer{flex:none;display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 18px;padding:5px 16px;background:var(--brand);color:rgba(255,255,255,.85);font-size:.78rem}
+footer b{color:#fff;font-weight:600}
+footer i{margin-right:5px;opacity:.7}
+@media(max-width:520px){footer{padding:4px 10px;font-size:.72rem}.pem-filter{width:200px}}
+.leaflet-control-layers-list{max-height:calc(100vh - 170px);overflow:auto}
+.sw{display:inline-block;width:11px;height:11px;margin-right:6px;vertical-align:-1px;border:1px solid #232323;border-radius:50%}
+.sw.poly{border-radius:2px}
+.n{color:var(--muted);font-size:.9em}
+.ring{animation:pulse 1s ease-in-out infinite alternate}
+@keyframes pulse{from{stroke-opacity:1}to{stroke-opacity:.2}}
+@media(prefers-reduced-motion:reduce){.ring{animation:none}}
+@media(max-width:900px){.stats{display:none}.search{margin-left:auto}}
+@media(max-width:520px){header{flex-wrap:wrap}.brand p{display:none}.search{width:100%}}
+@media print{.search,.leaflet-control-container{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Ouvrages d'eau potable</h1>
+    <p>Commune de Gorom : points d'eau, châteaux d'eau et bornes-fontaines</p>
+  </div>
+  <div class="stats" id="stats" aria-label="Chiffres clés"></div>
+  <div class="search" role="search">
+    <i class="fas fa-search" aria-hidden="true"></i>
+    <input id="q" type="search" placeholder="Rechercher une localité" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="results" aria-label="Rechercher une localité">
+    <ul id="results" role="listbox"></ul>
+  </div>
+</header>
+<div id="map" aria-label="Carte interactive"></div>
+<footer>
+  <span><i class="fas fa-user" aria-hidden="true"></i>Réalisation : <b>S. Rasmané, DPAERAH-UDL</b></span>
+  <span><i class="fas fa-database" aria-hidden="true"></i>Source des données : <b>BNDT-2012, INOH 2025</b></span>
+</footer>
+
+<script src="js/qgis2web_expressions.js"></script>
+<script src="js/leaflet.js"></script>
+<script src="js/L.Control.Layers.Tree.min.js"></script>
+<script src="js/L.Control.Locate.min.js"></script>
+<script src="js/leaflet-hash.js"></script>
+<script src="js/rbush.min.js"></script>
+<script src="js/labelgun.min.js"></script>
+<script src="js/labels.js"></script>
+<script src="js/leaflet-measure.js"></script>
+<script src="data/LocalitesdeGorom_0.js"></script>
+<script src="data/Pointdeau_1.js"></script>
+<script src="data/Chateaudeau_2.js"></script>
+<script src="data/Bornesfontaines_3.js"></script>
+<script src="data/CommuneslimitrophesdeGorom_4.js"></script>
+<script src="data/CommunedeGorom_5.js"></script>
+<script>
+/* ---------- Utilitaires ---------- */
+var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var nf = new Intl.NumberFormat('fr-FR');
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+  });
+}
+function norm(s) { return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+/* Lecture tolérante : retrouve un champ même si son nom contient des accents mal encodés */
+function getProp(p, f) {
+  if (f.key in p) return p[f.key];
+  if (f.re) { for (var k in p) { if (f.re.test(k)) return p[k]; } }
+  return null;
+}
+/* Itinéraire vers un point : ouvre l'application de cartographie du téléphone / navigateur,
+   le départ étant la position actuelle de la personne. */
+function routeHtml(lat, lng) {
+  var d = lat + ',' + lng;
+  var google = 'https://www.google.com/maps/dir/?api=1&destination=' + d + '&travelmode=driving';
+  var osm = 'https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=%3B' + d;
+  return '<div class="pp-route">' +
+    '<a class="go" href="' + google + '" target="_blank" rel="noopener"><i class="fas fa-route" aria-hidden="true"></i>Itinéraire</a>' +
+    '<a class="alt" href="' + osm + '" target="_blank" rel="noopener">via OpenStreetMap</a></div>';
+}
+function popupHtml(kind, color, textColor, title, fields, props) {
+  var rows = '';
+  fields.forEach(function (f) {
+    var v = getProp(props, f);
+    var empty = (v === null || v === undefined || v === '' || v === 'NULL');
+    if (empty && !f.always) return;
+    if (f.fmt) v = f.fmt(v);
+    else if (f.num && !isNaN(v)) v = nf.format(v);
+    rows += '<tr><th scope="row">' + esc(f.label) + '</th><td>' + esc(v) + '</td></tr>';
+  });
+  return '<div class="pp" style="--c:' + color + ';--t:' + textColor + '">' +
+    '<div class="pp-head"><div class="pp-kicker">' + esc(kind) + '</div><h3>' + esc(title) + '</h3></div>' +
+    (rows ? '<table>' + rows + '</table>' : '<p class="pp-empty">Aucune information renseignée.</p>') + '</div>';
+}
+/* ---------- Fonctionnement des points d'eau (colonne FonctInv : F / P / NULL) ---------- */
+var STATUS = {
+  f:  {label: 'Fonctionnel',   color: '#2b7bba'},
+  p:  {label: 'En panne',      color: '#c43c39'},
+  nr: {label: 'Non renseigné', color: '#6f7c83'}
+};
+var STATUS_ORDER = ['f', 'p', 'nr'];
+var FONCT = {key: 'FonctInv', re: /^Fonct.?Inv$/i};
+function statusOf(v) {
+  if (v === null || v === undefined) return 'nr';
+  var t = norm(String(v).trim());
+  if (t === '' || t === 'null' || t === 'none') return 'nr';
+  if (t.charAt(0) === 'f') return 'f';
+  if (t.charAt(0) === 'p') return 'p';
+  return 'nr';
+}
+function getStatus(props) { return statusOf(getProp(props, FONCT)); }
+var YEAR = {key: 'Année de réalisation', re: /^Ann.{1,3}e de r.{1,3}alisation$/, label: 'Année de réalisation'};
+
+/* ---------- Champs affichés dans les fenêtres d'information ---------- */
+var F_PEM = [
+  {key: 'NOM_PROJET', label: 'Projet'},
+  {key: 'FonctInv', re: FONCT.re, label: 'Fonctionnement', always: true, fmt: function (v) { return STATUS[statusOf(v)].label; }},
+  {key: 'AnExecPEM', label: "Année d'exécution"},
+  {key: 'LIBELLE_TYPE_PEM', label: "Type de point d'eau"},
+  {key: 'LIBELLE_STATUT_PEM', label: "Statut du point d'eau"},
+  {key: 'Nom du village', label: "Nom du village"}
+];
+var F_CE = [
+  {key: 'NOM_REGION', label: 'Région'}, {key: 'NOM_PROVINCE', label: 'Province'},
+  {key: 'NOM_COMMUNE', label: 'Commune'}, {key: 'NomQuart', label: 'Quartier'}, YEAR,
+  {key: 'CapCE', label: 'Capacité', num: 1},
+  {key: 'LIBELLE_TYPE_CHATEAU', label: 'Type de château'},
+  {key: 'Type du reservoir', label: 'Type de réservoir'},
+  {key: 'Metallique', label: 'Métallique'}, {key: 'Beton', label: 'Béton'},
+  {key: 'Poly', label: 'Polyéthylène'}, {key: 'Autres', label: 'Autres'},
+  {key: 'DetailAutres', label: 'Détail'},
+  {key: 'ExistCompteur', label: 'Compteur'}, {key: 'IndexCompteur', label: 'Index du compteur'},
+  {key: 'Date de saisie', label: 'Date de saisie'}, {key: 'CodeADM', label: 'Code'}
+];
+var F_BF = [
+  {key: 'FonctBF', label: 'Fonctionnement'}, {key: 'NbreRobinet', label: 'Nombre de robinets'}, YEAR
+];
+
+/* ---------- Carte ---------- */
+var map = L.map('map', {zoomControl: false, maxZoom: 22, minZoom: 1});
+map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> · <a href="https://github.com/qgis2web/qgis2web" target="_blank" rel="noopener">qgis2web</a>');
+var bounds_group = L.featureGroup([]);
+
+var osmAttr = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+var base = {
+  clair: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {subdomains: 'abcd', maxNativeZoom: 19, maxZoom: 22, attribution: osmAttr + ' &copy; <a href="https://carto.com/attributions">CARTO</a>'}),
+  osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxNativeZoom: 19, maxZoom: 22, attribution: osmAttr}),
+  sat: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxNativeZoom: 18, maxZoom: 22, attribution: 'Imagerie &copy; Esri'}),
+  none: L.layerGroup()
+};
+base.clair.addTo(map);
+
+/* Polygones (sous les points, non interactifs) */
+function polyLayer(data, pane, z, style) {
+  map.createPane(pane);
+  map.getPane(pane).style.zIndex = z;
+  var l = L.geoJson(data, {pane: pane, interactive: false, style: function () { return style; }});
+  bounds_group.addLayer(l);
+  return l.addTo(map);
+}
+var layer_CommuneslimitrophesdeGorom_4 = polyLayer(json_CommuneslimitrophesdeGorom_4, 'pane_limitrophes', 400,
+  {color: '#8fa3ad', weight: 1, fillColor: '#a6cee3', fillOpacity: 0.45});
+var layer_CommunedeGorom_5 = polyLayer(json_CommunedeGorom_5, 'pane_commune', 401,
+  {color: '#232323', weight: 3, fill: false});
+
+/* Points */
+function pointLayer(o) {
+  map.createPane(o.pane);
+  map.getPane(o.pane).style.zIndex = o.z;
+  var style = {pane: o.pane, interactive: !!o.popup, radius: o.r, color: o.stroke || '#fff', weight: 1.5, opacity: 1, fillColor: o.fill, fillOpacity: 1};
+  var lyr = L.geoJson(o.data, {
+    pane: o.pane,
+    interactive: !!o.popup,
+    pointToLayer: function (f, ll) {
+      return L.circleMarker(ll, o.fillFn ? L.extend({}, style, {fillColor: o.fillFn(f.properties)}) : style);
+    },
+    onEachFeature: function (f, l) {
+      if (!o.popup) return;
+      var c = f.geometry && f.geometry.coordinates;
+      var route = (c && isFinite(c[0]) && isFinite(c[1])) ? routeHtml(c[1], c[0]) : '';
+      l.bindPopup(o.popup(f.properties) + route, {maxHeight: 380});
+      l.on({
+        mouseover: function () { l.setStyle({radius: o.r + 2, weight: 2.5}); },
+        mouseout: function () { l.setStyle({radius: o.r, weight: 1.5}); }
+      });
+    }
+  });
+  bounds_group.addLayer(lyr);
+  return o.hidden ? lyr : lyr.addTo(map);   // hidden : couche décochée au chargement
+}
+/* Les puits sont mis à part : ni affichés au chargement, ni comptés dans « Points d'eau » */
+function isPuits(f) {
+  var t = norm(String(getProp(f.properties, {key: 'LIBELLE_TYPE_PEM', re: /LIBELLE.*TYPE.*PEM/i}) || '').trim());
+  return t.indexOf('puits') === 0;
+}
+var json_Puits = {type: 'FeatureCollection', name: 'Puits',
+  features: json_Pointdeau_1.features.filter(isPuits)};
+json_Pointdeau_1 = {type: json_Pointdeau_1.type, name: json_Pointdeau_1.name, crs: json_Pointdeau_1.crs,
+  features: json_Pointdeau_1.features.filter(function (f) { return !isPuits(f); })};
+
+var layer_LocalitesdeGorom_0 = pointLayer({data: json_LocalitesdeGorom_0, pane: 'pane_localites', z: 410, r: 3, fill: '#000'});
+var layer_Pointdeau_1 = pointLayer({data: json_Pointdeau_1, pane: 'pane_pem', z: 411, r: 5, fill: '#6f7c83',
+  fillFn: function (p) { return STATUS[getStatus(p)].color; },
+  popup: function (p) { return popupHtml('Point d\'eau', STATUS[getStatus(p)].color, '#fff', 'Point d\'eau moderne', F_PEM, p); }});
+var layer_Puits = pointLayer({data: json_Puits, pane: 'pane_puits', z: 411, r: 5, fill: '#6f7c83', stroke: '#232323', hidden: true,
+  fillFn: function (p) { return STATUS[getStatus(p)].color; },
+  popup: function (p) { return popupHtml('Puits', STATUS[getStatus(p)].color, '#fff', 'Puits', F_PEM, p); }});
+var layer_Bornesfontaines_3 = pointLayer({data: json_Bornesfontaines_3, pane: 'pane_bf', z: 412, r: 5, fill: '#85b66f',
+  popup: function (p) { return popupHtml('Borne-fontaine', '#85b66f', '#10280a', 'Borne-fontaine', F_BF, p); }});
+var layer_Chateaudeau_2 = pointLayer({data: json_Chateaudeau_2, pane: 'pane_ce', z: 413, r: 7, fill: '#efd34a',
+  popup: function (p) {
+    return popupHtml('Château d\'eau', '#efd34a', '#3a2f00', getProp(p, {key: 'Nom du village'}) || 'Château d\'eau', F_CE, p);
+  }});
+
+/* ---------- Vue initiale, limites et lien partageable ---------- */
+var fullBounds = bounds_group.getBounds();
+map.fitBounds(fullBounds, {padding: [20, 20]});
+map.setMaxBounds(fullBounds.pad(0.75));
+map.setMinZoom(Math.max(map.getZoom() - 2, 1));
+var hash = new L.Hash(map);
+
+/* ---------- Contrôles ---------- */
+L.control.zoom({position: 'topleft', zoomInTitle: 'Zoom avant', zoomOutTitle: 'Zoom arrière'}).addTo(map);
+var HomeControl = L.Control.extend({
+  options: {position: 'topleft'},
+  onAdd: function () {
+    var c = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+    var a = L.DomUtil.create('a', 'fas fa-home', c);
+    a.href = '#'; a.title = "Vue d'ensemble";
+    a.setAttribute('role', 'button'); a.setAttribute('aria-label', "Vue d'ensemble");
+    L.DomEvent.on(a, 'click', function (e) {
+      L.DomEvent.preventDefault(e);
+      map.fitBounds(fullBounds, {padding: [20, 20]});
+    });
+    return c;
+  }
+});
+map.addControl(new HomeControl());
+L.control.locate({
+  locateOptions: {maxZoom: 19},
+  strings: {
+    title: 'Me localiser',
+    popup: 'Vous êtes à moins de {distance} {unit} de ce point',
+    outsideMapBoundsMsg: 'Vous semblez être en dehors des limites de la carte'
+  }
+}).addTo(map);
+new L.Control.Measure({
+  position: 'topleft',
+  primaryLengthUnit: 'meters', secondaryLengthUnit: 'kilometers',
+  primaryAreaUnit: 'sqmeters', secondaryAreaUnit: 'hectares'
+}).addTo(map);
+var ruler = document.querySelector('.leaflet-control-measure-toggle');
+if (ruler) { ruler.innerHTML = ''; ruler.classList.add('fas', 'fa-ruler'); ruler.title = 'Mesurer une distance ou une surface'; }
+L.control.scale({imperial: false, position: 'bottomleft'}).addTo(map);
+
+/* Légende et gestion des couches (pastilles CSS, plus besoin des images legend/) */
+function ov(label, color, poly, layer) {
+  return {
+    label: '<span class="sw' + (poly ? ' poly' : '') + '" style="background:' + color + '"></span>' + label +
+      ' <span class="n">(' + nf.format(layer.getLayers().length) + ')</span>',
+    layer: layer
+  };
+}
+L.control.layers.tree(
+  [
+    {label: 'Fond clair', layer: base.clair},
+    {label: 'OpenStreetMap', layer: base.osm},
+    {label: 'Imagerie satellite', layer: base.sat},
+    {label: 'Sans fond', layer: base.none}
+  ],
+  [
+    ov("Châteaux d'eau", '#efd34a', false, layer_Chateaudeau_2),
+    ov('Bornes-fontaines', '#85b66f', false, layer_Bornesfontaines_3),
+    ov("Points d'eau", '#6f7c83', false, layer_Pointdeau_1),
+    ov('Puits', 'linear-gradient(90deg,#2b7bba 33%,#c43c39 33% 66%,#6f7c83 66%)', false, layer_Puits),
+    ov('Localités', '#000', false, layer_LocalitesdeGorom_0),
+    ov('Commune de Gorom', 'transparent', true, layer_CommunedeGorom_5),
+    ov('Communes limitrophes', '#a6cee3', true, layer_CommuneslimitrophesdeGorom_4)
+  ],
+  {collapsed: window.innerWidth < 650, position: 'topright'}
+).addTo(map);
+
+/* ---------- Filtre des points d'eau : type (Forage / Puits) + fonctionnement (F / P / non renseigné) ---------- */
+var PemFilterControl = L.Control.extend({
+  options: {position: 'topright'},
+
+  onAdd: function () {
+    var c = L.DomUtil.create('div', 'pem-filter leaflet-control');
+    c.setAttribute('role', 'region');
+    c.setAttribute('aria-label', 'Filtre des points d’eau');
+
+    var boxes = STATUS_ORDER.map(function (k) {
+      return '<label class="pem-opt">' +
+        '<input type="checkbox" data-status="' + k + '" checked>' +
+        '<span class="pem-dot" style="background:' + STATUS[k].color + '"></span>' +
+        '<span class="pem-lbl">' + STATUS[k].label + '</span>' +
+        '<b class="pem-n" id="pemN_' + k + '">0</b></label>';
+    }).join('');
+
+    var collapsed = window.innerWidth < 650;
+    c.innerHTML =
+      '<button type="button" class="pem-filter-title" id="pemToggle" aria-expanded="' + !collapsed + '" aria-controls="pemBody">' +
+        '<i class="fas fa-filter" aria-hidden="true"></i><span>Filtrer les points d’eau</span>' +
+        '<i class="fas fa-chevron-up pem-chev" aria-hidden="true"></i>' +
+      '</button>' +
+      '<div class="pem-body" id="pemBody"' + (collapsed ? ' hidden' : '') + '>' +
+        '<span class="pem-sub">Fonctionnement</span>' + boxes +
+        '<div class="pem-actions"><button type="button" id="pemReset">Réinitialiser</button></div>' +
+        '<div class="pem-filter-count" id="pemFilterCount" aria-live="polite"></div>' +
+      '</div>';
+
+    L.DomEvent.disableClickPropagation(c);
+    L.DomEvent.disableScrollPropagation(c);
+
+    L.DomEvent.on(c, 'change', updatePEMFilter);
+    L.DomEvent.on(c.querySelector('#pemToggle'), 'click', function () {
+      var btn = c.querySelector('#pemToggle'), body = c.querySelector('#pemBody');
+      var open = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', open);
+      body.hidden = !open;
+    });
+    L.DomEvent.on(c.querySelector('#pemReset'), 'click', function () {
+      Array.prototype.forEach.call(c.querySelectorAll('input[data-status]'), function (cb) { cb.checked = true; });
+      updatePEMFilter();
+    });
+    return c;
+  }
+});
+map.addControl(new PemFilterControl());
+
+/* Type normalisé : tolère « Forage », « FORAGE », espaces, accents… */
+function normalizePEMType(value) {
+  return norm(String(value || '').trim()).replace(/\s+/g, ' ');
+}
+
+function updatePEMFilter() {
+  var countBox = document.getElementById('pemFilterCount');
+  if (!countBox) return;
+
+  var allowed = {};
+  Array.prototype.forEach.call(document.querySelectorAll('.pem-filter input[data-status]'), function (cb) {
+    allowed[cb.getAttribute('data-status')] = cb.checked;
+  });
+
+  /* Applique le filtre de fonctionnement à une couche et renvoie ses compteurs */
+  function apply(group) {
+    var groupOn = map.hasLayer(group);   // ne rien afficher si la couche est décochée
+    var r = {total: 0, visible: 0, n: {f: 0, p: 0, nr: 0}};
+    group.eachLayer(function (layer) {
+      r.total += 1;
+      var st = getStatus(layer.feature.properties);
+      r.n[st] += 1;
+      var show = allowed[st];
+      if (show) r.visible += 1;
+      if (!groupOn) return;
+      if (show) { if (!map.hasLayer(layer)) layer.addTo(map); }
+      else if (map.hasLayer(layer)) { map.removeLayer(layer); }
+    });
+    return r;
+  }
+  var pe = apply(layer_Pointdeau_1);   // points d'eau (hors puits)
+  var pu = apply(layer_Puits);         // puits, à part
+
+  STATUS_ORDER.forEach(function (k) {
+    var el = document.getElementById('pemN_' + k);
+    if (el) el.textContent = nf.format(pe.n[k]);
+  });
+
+  var known = pe.n.f + pe.n.p;
+  var html = '<b>' + nf.format(pe.visible) + '</b> affiché(s) sur <b>' + nf.format(pe.total) + '</b> point(s) d’eau';
+  if (known) {
+    html += '<span class="pem-rate">Taux de fonctionnement : <b>' + nf.format(Math.round(100 * pe.n.f / known)) +
+      ' %</b> (sur ' + nf.format(known) + ' renseignés)</span>';
+  }
+  if (map.hasLayer(layer_Puits)) {
+    //html += '<span class="pem-rate">Puits : <b>' + nf.format(pu.visible) + '</b> affiché(s) sur <b>' + nf.format(pu.total) + '</b></span>';
+  } else {
+    //html += '<span class="pem-rate">Puits : <b>' + nf.format(pu.total) + '</b> (masqués, cochez la couche « Puits »)</span>';
+  }
+  if (map.hasLayer(layer_Pointdeau_1) && !pe.visible) html += '<span class="pem-warn">Aucun point d’eau ne correspond aux filtres.</span>';
+  countBox.innerHTML = html;
+}
+
+/* Si la couche « Points d’eau » est réactivée, on réapplique le filtre */
+map.on('layeradd', function (e) {
+  if (e.layer === layer_Pointdeau_1 || e.layer === layer_Puits) updatePEMFilter();
+});
+updatePEMFilter();
+
+/* Chiffres clés dans l'en-tête */
+document.getElementById('stats').innerHTML = [
+  ["Châteaux d'eau", layer_Chateaudeau_2, '#efd34a'],
+  ['Bornes-fontaines', layer_Bornesfontaines_3, '#85b66f'],
+  ["Points d'eau (forages)", layer_Pointdeau_1, '#6f7c83'],
+  //['Puits', layer_Puits, '#6f7c83'],
+  ['Localités', layer_LocalitesdeGorom_0, '#000']
+].map(function (s) {
+  return '<span class="chip"><span class="dot" style="background:' + s[2] + '"></span><b>' +
+    nf.format(s[1].getLayers().length) + '</b> ' + esc(s[0]) + '</span>';
+}).join('');
+
+/* ---------- Étiquettes (labelgun évite les chevauchements) ---------- */
+var labelIdx = 0;
+function addLabels(layer, prop, cls) {
+  layer.eachLayer(function (l) {
+    var name = l.feature.properties[prop];
+    if (name === null || name === undefined || name === '') return;
+    l.bindTooltip(esc(name), {permanent: true, offset: [0, -16], className: 'lbl ' + cls});
+    labels.push(l);
+    totalMarkers += 1;
+    l.added = true;
+    addLabel(l, labelIdx++);
+  });
+}
+addLabels(layer_LocalitesdeGorom_0, 'VillageADM', 'lbl-village');
+addLabels(layer_CommuneslimitrophesdeGorom_4, 'Nom', 'lbl-commune');
+function refreshLabels() { resetLabels([layer_LocalitesdeGorom_0, layer_CommuneslimitrophesdeGorom_4]); }
+refreshLabels();
+map.on('zoomend layeradd layerremove', refreshLabels);
+
+/* ---------- Recherche locale (localités et châteaux d'eau) ---------- */
+var searchIndex = [];
+layer_LocalitesdeGorom_0.eachLayer(function (l) {
+  var n = l.feature.properties.VillageADM;
+  if (n) searchIndex.push({name: String(n), sub: 'Localité', key: norm(n), ll: l.getLatLng()});
+});
+layer_Chateaudeau_2.eachLayer(function (l) {
+  var n = getProp(l.feature.properties, {key: 'Nom du village'});
+  if (n) searchIndex.push({name: String(n), sub: "Château d'eau", key: norm(n), ll: l.getLatLng(), layer: l});
+});
+var q = document.getElementById('q'), list = document.getElementById('results');
+var current = [], sel = -1, ring = null, ringTimer = null;
+
+function closeList() { list.style.display = 'none'; q.setAttribute('aria-expanded', 'false'); }
+function markSelected() {
+  Array.prototype.forEach.call(list.children, function (li, i) { li.setAttribute('aria-selected', i === sel); });
+}
+function render() {
+  var t = norm(q.value.trim());
+  current = []; sel = -1; list.innerHTML = '';
+  if (t.length >= 2) {
+    current = searchIndex.filter(function (e) { return e.key.indexOf(t) > -1; })
+      .sort(function (a, b) { return a.key.indexOf(t) - b.key.indexOf(t); }).slice(0, 8);
+    current.forEach(function (e) {
+      var li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.innerHTML = '<span>' + esc(e.name) + '</span><small>' + esc(e.sub) + '</small>';
+      li.addEventListener('mousedown', function (ev) { ev.preventDefault(); go(e); });
+      list.appendChild(li);
+    });
+    if (!current.length) list.innerHTML = '<li class="none">Aucun résultat</li>';
+  }
+  var open = list.children.length > 0;
+  list.style.display = open ? 'block' : 'none';
+  q.setAttribute('aria-expanded', open);
+}
+function go(e) {
+  q.value = e.name;
+  closeList();
+  if (reduceMotion) { map.setView(e.ll, 16); } else { map.flyTo(e.ll, 16, {duration: 1.2}); }
+  if (ring) map.removeLayer(ring);
+  clearTimeout(ringTimer);
+  ring = L.circleMarker(e.ll, {radius: 16, color: '#d9a441', weight: 3, fill: false, className: 'ring', interactive: false}).addTo(map);
+  ringTimer = setTimeout(function () { if (ring) { map.removeLayer(ring); ring = null; } }, 6000);
+  if (e.layer) map.once('moveend', function () { e.layer.openPopup(); });
+}
+q.addEventListener('input', render);
+q.addEventListener('blur', closeList);
+q.addEventListener('focus', render);
+q.addEventListener('keydown', function (ev) {
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    if (!current.length) return;
+    sel = (sel + (ev.key === 'ArrowDown' ? 1 : -1) + current.length) % current.length;
+    markSelected();
+  } else if (ev.key === 'Enter' && current.length) {
+    go(current[sel >= 0 ? sel : 0]);
+  } else if (ev.key === 'Escape') {
+    closeList();
+  }
+});
+</script>
+</body>
+</html>
