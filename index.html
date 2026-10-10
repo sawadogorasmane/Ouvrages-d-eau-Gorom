@@ -108,7 +108,7 @@ footer i{margin-right:5px;opacity:.7}
 </header>
 <div id="map" aria-label="Carte interactive"></div>
 <footer>
-  <span><i class="fas fa-user" aria-hidden="true"></i>Réalisation : <b>S. Rasmané, DPAERAH-UDL</b></span>
+  <span><i class="fas fa-user" aria-hidden="true"></i>Réalisation : <b>S. R. , DPAERAH-UDL</b></span>
   <span><i class="fas fa-database" aria-hidden="true"></i>Source des données : <b>BNDT-2012, INOH 2025</b></span>
 </footer>
 
@@ -221,9 +221,9 @@ var base = {
   clair: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {subdomains: 'abcd', maxNativeZoom: 19, maxZoom: 22, attribution: osmAttr + ' &copy; <a href="https://carto.com/attributions">CARTO</a>'}),
   osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxNativeZoom: 19, maxZoom: 22, attribution: osmAttr}),
   sat: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxNativeZoom: 18, maxZoom: 22, attribution: 'Imagerie &copy; Esri'}),
-  none: L.layerGroup()
+none: L.layerGroup()
 };
-base.clair.addTo(map);
+base.none.addTo(map);
 
 /* Polygones (sous les points, non interactifs) */
 function polyLayer(data, pane, z, style) {
@@ -338,10 +338,10 @@ function ov(label, color, poly, layer) {
 }
 L.control.layers.tree(
   [
+    {label: 'Sans fond', layer: base.none},
     {label: 'Fond clair', layer: base.clair},
     {label: 'OpenStreetMap', layer: base.osm},
-    {label: 'Imagerie satellite', layer: base.sat},
-    {label: 'Sans fond', layer: base.none}
+    {label: 'Imagerie satellite', layer: base.sat}
   ],
   [
     ov("Châteaux d'eau", '#efd34a', false, layer_Chateaudeau_2),
